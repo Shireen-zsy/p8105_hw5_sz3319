@@ -1,7 +1,7 @@
 ---
-title: "p8105_mtp_sz3319"
+title: "p8105_hw5_sz3319"
 author: "Shiyu Zhang"
-date: "2024-10-23"
+date: "2024-11-15"
 output: 
   github_document
 
@@ -12,4 +12,157 @@ output:
 library(tidyverse)
 library(knitr)
 library(rvest)
+library(broom)
+library(dplyr)
+library(ggplot2)
 ```
+
+
+## Problem 1
+
+### 1.1 
+
+
+```{r}
+set.seed(666)
+
+shared_birth = function(n) {
+  birth = sample(1:365, n, replace = TRUE)
+  return(length(birth) != length(unique(birth)))
+}
+```
+
+### 1.2 
+
+```{r}
+n_simu = 10000
+n_group = 2:50
+p_share = numeric(length(n_group))
+
+```
+
+```{r}
+for (n in n_group) {
+  shared_count = 0
+  for (x in 1:n_simu) {
+    if (shared_birth(n)) {
+      shared_count = shared_count + 1
+    }
+  }
+  probability = shared_count / n_simu
+  p_share[n - 1] = probability
+}
+```
+
+
+### 1.3 
+
+```{r}
+plot(n_group, p_share, type = "o", 
+     main = "relationship", 
+     xlab = "Group Size", 
+     ylab = "Probability of shared birthday", 
+     col = "blue", 
+     pch = 16)
+grid()
+```
+
+
+## Problem 2
+
+### 2.1 
+
+```{r}
+n = 30  
+sigma = 5  
+mu_values = c(1, 2, 3, 4, 5, 6)  
+n_simulations = 5000  
+```
+
+```{r}
+results_p2 = data.frame(mu = numeric(), power = numeric(), mu_hat = numeric(), p_value = numeric())
+```
+
+```{r}
+set.seed(123)
+
+for (mu in mu_values) {
+  power_count = 0
+  mu_hat_vals = numeric(n_simulations) 
+  p_vals = numeric(n_simulations) 
+  
+  for (i in 1:n_simulations) {
+    data = rnorm(n, mean = mu, sd = sigma)
+    t_test_result = t.test(data, mu = 0) #t test
+    #tidy_result = tidy(t_test_result)
+    p_vals[i] = t_test_result$p.value
+    mu_hat_vals[i] = t_test_result$estimate
+    if (p_vals[i] < 0.05) {
+      power_count = power_count + 1
+    }
+  }
+  power = power_count / n_simulations
+  results_p2 = rbind(results_p2, data.frame(mu = mu, power = power, mu_hat = mean(mu_hat_vals), p_value = mean(p_vals)))
+}
+
+kable(results_p2)
+
+```
+
+### 2.2 Make plots
+
+* 
+
+```{r}
+ggplot(results_p2, aes(x = mu, y = power)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Effect Size VS. Power",
+       x = "Mu",
+       y = "Power")
+
+
+```
+
+
+
+
+
+
+
+### 2.3 
+
+# 计算每个 mu 值的功效和平均估计值
+estimate_data <- results_p2 %>%
+  group_by(mu) %>%
+  summarise(
+    power = mean(p_value < alpha),  # 计算功效，即 p 值小于 0.05 的比例
+    avg_estimate_all = mean(mu_hat),  # 所有样本的平均估计值
+    avg_estimate_rejected = mean(mu_hat[p_value < alpha])  # 拒绝零假设的样本的平均估计值
+  )
+
+# 查看计算结果
+print(estimate_data)
+
+
+```{r}
+ggplot(results_p2, aes(x = mu, y = mu_hat)) +
+  geom_line() +
+  labs(title = "Estimate of mu vs True mu",
+       x = "True mu",
+       y = "Estimate of mu")
+```
+
+
+```{r}
+results_rejected <- results_p2 %>% filter(p_value < 0.05)
+
+ggplot(results_rejected, aes(x = mu, y = mu_hat)) +
+  geom_line() +
+  geom_point() + 
+  labs(title = "Estimate of mu (Rejected Null) vs True mu",
+       x = "True mu",
+       y = "Estimate of mu (Rejected Null)")
+```
+
+
