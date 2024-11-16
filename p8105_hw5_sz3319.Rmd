@@ -14,6 +14,7 @@ library(knitr)
 library(rvest)
 library(broom)
 library(dplyr)
+library(purrr)
 library(ggplot2)
 ```
 
@@ -73,7 +74,7 @@ grid()
 ### 2.1 
 
 ```{r}
-n = 30  
+n = 30
 sigma = 5  
 mu_values = c(1, 2, 3, 4, 5, 6)  
 n_simulations = 5000  
@@ -132,19 +133,6 @@ ggplot(results_p2, aes(x = mu, y = power)) +
 
 ### 2.3 
 
-# 计算每个 mu 值的功效和平均估计值
-estimate_data <- results_p2 %>%
-  group_by(mu) %>%
-  summarise(
-    power = mean(p_value < alpha),  # 计算功效，即 p 值小于 0.05 的比例
-    avg_estimate_all = mean(mu_hat),  # 所有样本的平均估计值
-    avg_estimate_rejected = mean(mu_hat[p_value < alpha])  # 拒绝零假设的样本的平均估计值
-  )
-
-# 查看计算结果
-print(estimate_data)
-
-
 ```{r}
 ggplot(results_p2, aes(x = mu, y = mu_hat)) +
   geom_line() +
@@ -155,7 +143,7 @@ ggplot(results_p2, aes(x = mu, y = mu_hat)) +
 
 
 ```{r}
-results_rejected <- results_p2 %>% filter(p_value < 0.05)
+results_rejected = results_p2 |> filter(p_value < 0.05)
 
 ggplot(results_rejected, aes(x = mu, y = mu_hat)) +
   geom_line() +
@@ -164,5 +152,101 @@ ggplot(results_rejected, aes(x = mu, y = mu_hat)) +
        x = "True mu",
        y = "Estimate of mu (Rejected Null)")
 ```
+
+
+
+
+## Problem 3 
+
+```{r, message=FALSE, warning=FALSE}
+homicide_data = read_csv("data/homicide-data.csv", na = c("NA", "", ".")) |> 
+  janitor::clean_names() |> 
+  rename_with(~ gsub("^x", "", .))
+```
+
+The variables are: 
+
+* Victim Characteristics: victim_last, victim_first, victim_race, victim_age, victim_sex.
+* Case Information: uid, report data, disposition.
+* Location: city, state, latitude, longitude.
+
+
+
+### 3.1 Clean data
+
+```{r}
+homicide_clean = homicide_data |>
+  mutate(city_state = paste(city, state, sep = ", ")) |>
+  group_by(city_state) |>
+  summarise(
+    total_homicides = n(),
+    unresolved_homicides = sum(disposition %in% c("Closed without arrest", "Open/No arrest"))
+  )
+```
+
+### 3.2 Baldimore
+
+```{r}
+baltimore_data <- homicide_clean |>
+  filter(city_state == "Baltimore, MD") |>
+  select(city_state, unresolved_homicides, total_homicides)
+
+unresolvedhomi = pull(baltimore_data, unresolved_homicides)
+totalhomi = pull(baltimore_data, total_homicides)
+
+baltimore_prop_test = prop.test(unresolvedhomi, totalhomi)
+
+tidy_baltimore_result <- tidy(baltimore_prop_test)
+
+# stimate, p.value, conf.low 和 conf.high
+result_summary <- tidy_baltimore_result |>
+  select(estimate, p.value, conf.low, conf.high) |>
+  mutate(CI = paste0("(", round(conf.low, 4), ", ", round(conf.high, 4), ")")) |>
+  select(estimate, p.value, CI)
+
+result_summary |>
+  knitr::kable()  
+
+```
+
+* **64.56%** of homicides in Baltimore are unsolved, which is a high percentage.
+* The p-value indicates that this result is statistically significant, so we can be confident that the proportion of unsolved homicides is not zero.
+* The 95% confidence interval tells us that the true proportion of unsolved homicides likely falls between **62.76%** and **66.32%**.
+
+### 3.3 Cities
+
+```{r, message=FALSE, warning=FALSE}
+#prop.test()
+city_proportions = homicide_clean|>
+  mutate(
+    prop_test = purrr::map2(total_homicides, unresolved_homicides, ~prop.test(.y, .x)),
+    tidy_result = purrr::map(prop_test, broom::tidy)
+  ) |>
+  unnest(tidy_result) |> 
+   select(city_state, estimate, p.value, conf.low, conf.high)
+
+head(city_proportions)
+```
+
+
+
+```{r}
+# set in order
+city_proportions_sorted = city_proportions |>
+  arrange(estimate)  
+
+ggplot(city_proportions_sorted, aes(x = reorder(city_state, estimate), y = estimate, ymin = conf.low, ymax = conf.high)) +
+  geom_point() +
+  geom_errorbar() +
+  labs(
+    title = "Proportion of Unsolved Homicides in U.S. Cities",
+    x = "City",
+    y = "Proportion of Unsolved Homicides"
+  ) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
+```
+
+* This plot shows that some cities, such as Chicago and New Orleans, have higher rates of unsolved homicide cases.
+* The CI shows that most cities show relatively tight intervals, while a few show greater uncertainty.
 
 
